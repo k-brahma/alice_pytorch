@@ -1,0 +1,14 @@
+.idea
+.venv
+
+# pycache
+__pycache__/
+
+# sample data dir
+data/
+
+# models dir
+models/
+
+# results dir
+results/
