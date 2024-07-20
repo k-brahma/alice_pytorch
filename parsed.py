@@ -19,14 +19,12 @@
 
 import os
 import warnings
+
 import pandas as pd
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
+from PIL import Image
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms, models
-from PIL import Image
 
 warnings.filterwarnings('ignore')
 

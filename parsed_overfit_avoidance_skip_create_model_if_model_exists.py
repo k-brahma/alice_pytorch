@@ -248,22 +248,24 @@ def predict_image(model, image_path, transform):
 
     with torch.no_grad():
         outputs = model(image)
-        probabilities = F.softmax(outputs, dim=1)
+        # probabilities = F.softmax(outputs, dim=1)
+        probabilities = F.sigmoid(outputs)
         kinoko_prob = probabilities[0][0].item() * 100
         takenoko_prob = probabilities[0][1].item() * 100
 
     return kinoko_prob, takenoko_prob
 
 
-def predict_test_images(model, test_dir, transform):
+def predict_test_images(model, base_test_dir, transform):
     """
     テストディレクトリ内のすべての画像に対して予測を行い、結果を表示する。
 
     Args:
         model (nn.Module): 予測に使用するモデル
-        test_dir (str): テスト画像が格納されているディレクトリのパス
+        base_test_dir (str): テスト画像が格納されているディレクトリの親ディレクトリのパス
         transform (transforms.Compose): 画像に適用する前処理
     """
+    test_dir = base_test_dir + '/unknown'
     for filename in os.listdir(test_dir):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
             image_path = os.path.join(test_dir, filename)
@@ -290,10 +292,8 @@ def create_submission(model, test_dir, transform):
     with torch.no_grad():
         for inputs, _ in test_loader:
             outputs = model(inputs)
-            # _, predicted = torch.max(outputs.data, 1)
-            # predictions.extend(predicted.tolist())
-            probabilities = F.softmax(outputs, dim=1)
-            predictions.extend(probabilities[:, 1].tolist())  # きのこの確率
+            _, predicted = torch.max(outputs.data, 1)
+            predictions.extend(predicted.tolist())
 
     test_filenames = [os.path.basename(x[0]) for x in test_dataset.imgs]
     submission = pd.DataFrame({'filename': test_filenames, 'class': predictions})
@@ -326,5 +326,90 @@ def main():
     create_submission(model, 'data/test', transform)
 
 
+def preparation(data_dir='data/train'):
+    """
+    データの前処理、読み込み、分割を行う。
+
+    Args:
+        data_dir (str): トレーニングデータのディレクトリパス
+
+    Returns:
+        dict: 前処理に関連するオブジェクトを含む辞書
+    """
+    transform = create_transforms()
+    train_dataset, val_dataset = load_and_split_data(data_dir, transform)
+    train_loader, val_loader = create_data_loaders(train_dataset, val_dataset)
+
+    return {
+        'transform': transform,
+        'train_loader': train_loader,
+        'val_loader': val_loader
+    }
+
+
+def train_or_load_model(model_path, train_loader, val_loader, force_refresh_model):
+    """
+    モデルを作成または読み込み、必要に応じてトレーニングを行う。
+
+    Args:
+        model_path (str): モデルファイルのパス
+        train_loader (DataLoader): トレーニングデータのローダー
+        val_loader (DataLoader): 検証データのローダー
+        force_refresh_model: 既存のモデルを使用せず、新しいモデルを作成するかどうか
+
+    Returns:
+        nn.Module: トレーニング済みのモデル
+    """
+    if os.path.exists(model_path) and not force_refresh_model:
+        print(f"Loading existing model from {model_path}")
+        model = models.resnet18()
+        num_features = model.fc.in_features
+        model.fc = nn.Linear(num_features, 2)
+        model.load_state_dict(torch.load(model_path))
+    else:
+        print("Creating and training new model")
+        model = create_model()
+        train_model(model, train_loader, val_loader)
+        save_model(model, model_path)
+
+    return model
+
+
+def predict(model, test_data_base_dir, transform):
+    """
+    テスト画像の予測と提出用CSVファイルの作成を行う。
+
+    Args:
+        model (nn.Module): 予測に使用するモデル
+        test_data_base_dir (str): テスト画像のディレクトリパス
+        transform (transforms.Compose): 画像変換オブジェクト
+    """
+    predict_test_images(model, test_data_base_dir, transform)
+    create_submission(model, test_data_base_dir, transform)
+
+
+def main(model_path, test_data_base_dir, force_refresh_model):
+    """
+    メイン関数。スクリプトの全体の流れを制御する。
+    """
+
+    # データの準備
+    prep_data = preparation()
+
+    # モデルのトレーニングまたは読み込み
+    model = train_or_load_model(
+        model_path,
+        prep_data['train_loader'],
+        prep_data['val_loader'],
+        force_refresh_model
+    )
+
+    # 予測と結果の出力
+    predict(model, test_data_base_dir, prep_data['transform'])
+
+
 if __name__ == "__main__":
-    main()
+    MODEL_PATH = 'models/model_avoidance.pth'
+    TEST_DATA_DIR_BASE_DIR = 'data/test'
+
+    main(MODEL_PATH, TEST_DATA_DIR_BASE_DIR, force_refresh_model=False)

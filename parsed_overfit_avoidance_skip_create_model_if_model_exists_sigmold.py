@@ -1,5 +1,5 @@
 """
-きのこの山とたけのこの里を分類するための機械学習モデルを訓練し、テストするスクリプト。
+きのこの山とたけのこの里を分類するための機械学習モデルを訓練し、テストするスクリプト。 sigmold 板
 
 このスクリプトは以下の主要な機能を提供します：
 1. データの前処理と読み込み
@@ -15,6 +15,9 @@
 注意:
 - PyTorch、torchvision、Pillowがインストールされている必要があります。
 - GPU使用時は、適宜コードを修正してGPUを使用するようにしてください。
+
+- 多クラス分類問題（この場合、きのこの山とたけのこの里の2クラス）に対して、Sigmoidは通常適切ではありません。
+- Sigmoidは各クラスを独立して扱うため、[1, 1]のような矛盾する出力が生じる可能性があります。
 """
 import copy
 import os
@@ -23,7 +26,6 @@ import warnings
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from PIL import Image
 from torch.utils.data import DataLoader, random_split
@@ -35,14 +37,6 @@ warnings.filterwarnings('ignore')
 def create_transforms():
     """
     画像の前処理用の変換を作成する。
-
-    変換内容:
-    1. リサイズ (256x256)
-    2. 中央部分の切り取り (224x224)
-    3. ランダムな色調整
-    4. 10%の確率でグレースケールに変換
-    5. テンソルに変換
-    6. 正規化
 
     Returns:
         transforms.Compose: 一連の変換をまとめたオブジェクト
@@ -68,10 +62,7 @@ def load_and_split_data(data_dir, transform):
     Returns:
         tuple: (訓練用データセット, 検証用データセット)
     """
-    # ImageFolderを使用してデータを読み込む
     full_dataset = datasets.ImageFolder(data_dir, transform=transform)
-
-    # データを8:2の割合で分割
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     return random_split(full_dataset, [train_size, val_size])
@@ -101,49 +92,79 @@ def create_model():
     Returns:
         nn.Module: 修正されたResNet-18モデル
     """
-    # 事前学習済みのResNet-18をロード
     model = models.resnet18(pretrained=True)
-
-    # 最後の全結合層を2クラス分類用に変更
     num_features = model.fc.in_features
     model.fc = nn.Linear(num_features, 2)
     return model
 
 
-def train_epoch(model, train_loader, criterion, optimizer):
+def train_model(model, train_loader, val_loader, num_epochs=15, patience=3):
     """
-    1エポックの訓練を行う
+    モデルを訓練し、各エポックごとの損失と精度を表示する。
+    早期停止機能と最良モデルの保存を含む。
 
     Args:
         model (nn.Module): 訓練するモデル
         train_loader (DataLoader): 訓練データのDataLoader
-        criterion: 損失関数
-        optimizer: オプティマイザ
+        val_loader (DataLoader): 検証データのDataLoader
+        num_epochs (int): 最大訓練エポック数（デフォルト: 15）
+        patience (int): 検証精度が改善しないエポック数の許容値（デフォルト: 3）
 
     Returns:
-        float: 平均損失
-        float: 訓練精度
+        nn.Module: 最良の性能を示したモデル
     """
-    model.train()
-    running_loss = 0.0
-    correct = 0
-    total = 0
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-    for inputs, labels in train_loader:
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+    best_model_weights = copy.deepcopy(model.state_dict())
+    best_accuracy = 0.0
+    no_improve_epochs = 0
 
-        running_loss += loss.item()
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        correct = 0
+        total = 0
 
-    avg_loss = running_loss / len(train_loader)
-    accuracy = correct / total
-    return avg_loss, accuracy
+        for inputs, labels in train_loader:
+            optimizer.zero_grad()
+            outputs = model(inputs)
+
+            # ラベルをone-hotエンコーディングに変換
+            labels_one_hot = torch.zeros(labels.size(0), 2)
+            labels_one_hot.scatter_(1, labels.unsqueeze(1), 1)
+
+            loss = criterion(outputs, labels_one_hot)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+            predicted = (torch.sigmoid(outputs) > 0.5).float()
+            total += labels.size(0)
+            correct += (predicted.argmax(dim=1) == labels).sum().item()
+
+        train_loss = running_loss / len(train_loader)
+        train_accuracy = correct / total
+
+        val_accuracy = validate(model, val_loader)
+
+        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {train_loss:.4f}, '
+              f'Train Accuracy: {train_accuracy:.4f}, Val Accuracy: {val_accuracy:.4f}')
+
+        if val_accuracy > best_accuracy:
+            best_accuracy = val_accuracy
+            best_model_weights = copy.deepcopy(model.state_dict())
+            no_improve_epochs = 0
+        else:
+            no_improve_epochs += 1
+
+        if no_improve_epochs >= patience:
+            print(f'Early stopping triggered after epoch {epoch + 1}')
+            break
+
+    model.load_state_dict(best_model_weights)
+    print(f'Best validation accuracy: {best_accuracy:.4f}')
+    return model
 
 
 def validate(model, val_loader):
@@ -163,60 +184,12 @@ def validate(model, val_loader):
     with torch.no_grad():
         for inputs, labels in val_loader:
             outputs = model(inputs)
-            _, predicted = torch.max(outputs.data, 1)
+            predicted = (torch.sigmoid(outputs) > 0.5).float()
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            correct += (predicted.argmax(dim=1) == labels).sum().item()
 
     accuracy = correct / total
     return accuracy
-
-
-def train_model(model, train_loader, val_loader, num_epochs=15, patience=3):
-    """
-    モデルを訓練し、各エポックごとの損失と精度を表示する。
-    早期停止機能と最良モデルの保存を含む。
-
-    Args:
-        model (nn.Module): 訓練するモデル
-        train_loader (DataLoader): 訓練データのDataLoader
-        val_loader (DataLoader): 検証データのDataLoader
-        num_epochs (int): 最大訓練エポック数（デフォルト: 15）
-        patience (int): 検証精度が改善しないエポック数の許容値（デフォルト: 3）
-
-    Returns:
-        nn.Module: 最良の性能を示したモデル
-    """
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
-
-    best_model_weights = copy.deepcopy(model.state_dict())
-    best_accuracy = 0.0
-    no_improve_epochs = 0
-
-    for epoch in range(num_epochs):
-        train_loss, train_accuracy = train_epoch(model, train_loader, criterion, optimizer)
-        val_accuracy = validate(model, val_loader)
-
-        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {train_loss:.4f}, '
-              f'Train Accuracy: {train_accuracy:.4f}, Val Accuracy: {val_accuracy:.4f}')
-
-        # 最良モデルの保存
-        if val_accuracy > best_accuracy:
-            best_accuracy = val_accuracy
-            best_model_weights = copy.deepcopy(model.state_dict())
-            no_improve_epochs = 0
-        else:
-            no_improve_epochs += 1
-
-        # 早期停止
-        if no_improve_epochs >= patience:
-            print(f'Early stopping triggered after epoch {epoch + 1}')
-            break
-
-    # 最良のモデルを復元
-    model.load_state_dict(best_model_weights)
-    print(f'Best validation accuracy: {best_accuracy:.4f}')
-    return model
 
 
 def save_model(model, save_path):
@@ -248,7 +221,7 @@ def predict_image(model, image_path, transform):
 
     with torch.no_grad():
         outputs = model(image)
-        probabilities = F.softmax(outputs, dim=1)
+        probabilities = torch.sigmoid(outputs)
         kinoko_prob = probabilities[0][0].item() * 100
         takenoko_prob = probabilities[0][1].item() * 100
 
@@ -283,22 +256,20 @@ def create_submission(model, test_dir, transform):
         transform (transforms.Compose): 画像に適用する前処理
     """
     test_dataset = datasets.ImageFolder(test_dir, transform=transform)
-    test_loader = DataLoader(test_dataset, batch_size=18, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     model.eval()
     predictions = []
     with torch.no_grad():
         for inputs, _ in test_loader:
             outputs = model(inputs)
-            # _, predicted = torch.max(outputs.data, 1)
-            # predictions.extend(predicted.tolist())
-            probabilities = F.softmax(outputs, dim=1)
-            predictions.extend(probabilities[:, 1].tolist())  # きのこの確率
+            predicted = (torch.sigmoid(outputs) > 0.5).float()
+            predictions.extend(predicted.tolist())
 
     test_filenames = [os.path.basename(x[0]) for x in test_dataset.imgs]
     submission = pd.DataFrame({'filename': test_filenames, 'class': predictions})
-    submission.to_csv('results/submission_avoidance.csv', index=False)
-    print("Submission file created: submission_avoidance.csv")
+    submission.to_csv('results/submission_sigmoid.csv', index=False)
+    print("Submission file created: submission_sigmoid.csv")
 
 
 def main():
@@ -314,10 +285,10 @@ def main():
 
     # モデルの作成と訓練
     model = create_model()
-    train_model(model, train_loader, val_loader)
+    model = train_model(model, train_loader, val_loader)
 
     # モデルの保存
-    save_model(model, 'models/model_avoidance.pth')
+    save_model(model, 'models/model_avoidance_sigmoid.pth')
 
     # テスト画像の予測
     predict_test_images(model, 'data/test', transform)
