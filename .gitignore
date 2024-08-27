@@ -1,5 +1,6 @@
 .idea
 .venv
+venv/*
 
 # pycache
 __pycache__/
@@ -12,3 +13,5 @@ models/
 
 # results dir
 results/
+
+submission.csv

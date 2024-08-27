@@ -50,7 +50,7 @@ transform = transforms.Compose([
 ])
 
 # ImageFolderを使用してディレクトリから画像データセットを読み込み、定義した前処理を適用
-full_dataset = datasets.ImageFolder('chocolate/train', transform=transform)
+full_dataset = datasets.ImageFolder('data/train', transform=transform)
 
 # 全データセットを訓練データセット（80％）と検証データセットに（20％）分割
 train_size = int(0.8 * len(full_dataset))
@@ -119,7 +119,7 @@ for epoch in range(num_epochs):  # エポック数だけ訓練と検証のルー
 """### 3.テストデータで検証する"""
 
 # テストデータセットのロード
-test_dataset = datasets.ImageFolder('chocolate/test', transform=transform)
+test_dataset = datasets.ImageFolder('data/test', transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=18, shuffle=False)
 
 # テストデータでの予測
@@ -171,7 +171,7 @@ with torch.no_grad():
 """### 4.任意の画像ファイルを判定する（おまけ✨）"""
 
 from PIL import Image
-from google.colab import files
+# from google.colab import files
 import io
 
 # テストデータセットのロード
@@ -198,7 +198,7 @@ def predict_image(image):
 
 
 # 画像をアップロードして予測
-uploaded = files.upload()
+# uploaded = files.upload()
 
-for fn in uploaded.keys():
-    predict_image(io.BytesIO(uploaded[fn]))
+# for fn in uploaded.keys():
+#     predict_image(io.BytesIO(uploaded[fn]))
