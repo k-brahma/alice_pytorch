@@ -147,7 +147,7 @@ torch.save(model.state_dict(), model_save_path)
 transform = transforms.Compose([transforms.Resize(256),
                                 transforms.CenterCrop(224),
                                 transforms.ToTensor()])
-test_dataset = datasets.ImageFolder('chocolate/test', transform=transform)
+test_dataset = datasets.ImageFolder('data/test', transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 # モデルを評価モードに設定
@@ -178,7 +178,7 @@ import io
 transform = transforms.Compose([transforms.Resize(256),
                                 transforms.CenterCrop(224),
                                 transforms.ToTensor()])
-test_dataset = datasets.ImageFolder('chocolate/test', transform=transform)
+test_dataset = datasets.ImageFolder('data/test', transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 model.eval()
@@ -195,7 +195,6 @@ def predict_image(image):
         takenoko_prob = probabilities[0][1].item() * 100
 
         print(f"きのこ度: {kinoko_prob:.2f}%, たけのこ度: {takenoko_prob:.2f}%")
-
 
 # 画像をアップロードして予測
 # uploaded = files.upload()

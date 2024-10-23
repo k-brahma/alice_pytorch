@@ -5,13 +5,10 @@ venv/*
 # pycache
 __pycache__/
 
-# sample data dir
-data/
-
 # models dir
-models/
+models/*
 
 # results dir
-results/
+results/*
 
 submission.csv

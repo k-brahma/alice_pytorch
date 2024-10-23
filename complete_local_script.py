@@ -23,7 +23,7 @@ transform = transforms.Compose([
 ])
 
 # データセットの読み込みと分割
-full_dataset = datasets.ImageFolder('chocolate/train', transform=transform)
+full_dataset = datasets.ImageFolder('data/train', transform=transform)
 train_size = int(0.8 * len(full_dataset))
 val_size = len(full_dataset) - train_size
 train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
@@ -112,7 +112,7 @@ for filename in os.listdir(test_dir):
         print()
 
 # テスト結果をCSVに出力
-test_dataset = datasets.ImageFolder('chocolate/test', transform=transform)
+test_dataset = datasets.ImageFolder('data/test', transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=18, shuffle=False)
 
 model.eval()

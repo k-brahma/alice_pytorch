@@ -11,7 +11,7 @@
 #     transforms.CenterCrop(224),
 #     transforms.ToTensor()
 # ])
-# test_dataset = datasets.ImageFolder('chocolate/test', transform=transform)
+# test_dataset = datasets.ImageFolder('data/test', transform=transform)
 # test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 #
 # model.eval()
